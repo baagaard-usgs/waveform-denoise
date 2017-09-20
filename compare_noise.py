@@ -164,7 +164,6 @@ class ComparisonFigure(object):
                 # Original strong-motion versus broadband
                 dataSM = trSM.dataOrig
                 dataBB = trBB.data
-                print trSM.times().shape, trSM.dataOrig.shape, trSM.data.shape, trBB.data.shape
                 self._updatePlot("Original", component, trSM.times(), dataSM, dataBB)
                 self._updateResidual("Original", component, trSM.times(), dataSM-dataBB)
 
@@ -198,8 +197,8 @@ class ComparisonFigure(object):
         for irow,row in enumerate(ComparisonFigure.ROWS):
             for icol,col in enumerate(ComparisonFigure.COLS):
                 ax = self.figure.axes(nrows, ncols, irow+1, icol+1)
-                line, = ax.plot([], [], 'r-', lw=0.5)
-                line2, = ax.plot([], [], 'b-', lw=0.5)
+                line, = ax.plot([], [], 'k-', lw=0.5)
+                line2, = ax.plot([], [], 'r-', lw=0.5)
                 ax.autoscale(enable=True, axis="both", tight=True)
                 if irow == 0:
                     ax.set_title(col)
@@ -211,11 +210,10 @@ class ComparisonFigure(object):
                     ax.text(pos.xmin, pos.ymax+0.02, row, fontweight='bold', transform=self.figure.figure.transFigure, ha="right")
                 self.axes["%s_%s" % (row,col)] = (ax,line,line2)
 
-        print self.axes.keys()
         return
 
     def _updatePlot(self, row, component, t, dSM, dBB):
-        ax, lineSM, lineBB = self.axes[row+"_"+component]
+        ax, lineBB, lineSM = self.axes[row+"_"+component]
         lineSM.set_xdata(t)
         lineSM.set_ydata(dSM)
         lineBB.set_xdata(t)
@@ -227,12 +225,12 @@ class ComparisonFigure(object):
         return
     
     def _updateResidual(self, row, component, t, residual):
-        ax, line, line2 = self.axes[row+" Residual_"+component]
-        line.set_xdata(t)
-        line.set_ydata(residual)
+        ax, line, lineR = self.axes[row+" Residual_"+component]
+        lineR.set_xdata(t)
+        lineR.set_ydata(residual)
         ax.relim()
         ax.autoscale_view()
-        ax.draw_artist(line)
+        ax.draw_artist(lineR)
         return
     
 # ----------------------------------------------------------------------
