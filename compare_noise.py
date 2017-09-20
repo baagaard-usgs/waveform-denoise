@@ -85,6 +85,8 @@ class WaveformData(object):
         """Load processed data.
         """
         import cPickle
+        import obspyutils.subset
+        
         if self.showProgress:
             print("Loading processed waveforms...")            
 
@@ -92,12 +94,16 @@ class WaveformData(object):
             with open(_data_filename(self.params, "waveforms_vel"), "r") as fin:
                 self.vel = cPickle.Unpickler(fin).load()
 
-        smVel = obspyutils.subset.streamByStation(self.vel.select(channel="HN?"))
-        bbVel = obspyutils.subset.streamByStation(self.vel.select(channel="HH?"))
-        for st in smVel.keys():
-            samplingRate =
-            startTime = 
-            bbVel[st].interpolate(sampling_rate=samplingRate, method="lanczos", starttime=startTime)
+        self.smVel = obspyutils.subset.streamByStation(self.vel.select(channel="HN?"))
+        self.bbVel = obspyutils.subset.streamByStation(self.vel.select(channel="HH?"))
+        for st in self.smVel.keys():
+            if not st in self.bbVel:
+                continue
+            for tr in self.smVel[st]:
+                samplingRate = tr.stats.sampling_rate
+                startTime = tr.stats.starttime
+                trBB = self.bbVel[st].select(component=tr.stats.channel[-1])
+                trBB.interpolate(sampling_rate=samplingRate, method="weighted_average_slopes", starttime=startTime)
 
         return
     
@@ -109,7 +115,7 @@ class ComparisonFigure(object):
     """
 
     ROWS = ["Original", "Original Residual", "Denoised", "Denoised Residual"]
-    COLS = ["East Component", "North Component", "Up Component"]
+    COLS = ["E", "N", "Z"]
     
     def __init__(self, params, showProgress):
         """
@@ -123,6 +129,7 @@ class ComparisonFigure(object):
         """
         """
         import sys
+        from ast import literal_eval
         
         if self.showProgress:
             sys.stdout.write("Plotting comparison figures...")
@@ -138,32 +145,34 @@ class ComparisonFigure(object):
         self._setupSubplots()
         self.figure.figure.canvas.draw()
 
-        assert(len(smVel.keys()) == len(bbVel.keys()))
-
-        numStations = len(smVel.keys())
-        for ist,st in enumerate(smVel.keys()):
-            stSM = smVel[st]
-            stBB = bbVel[st]
+        numStations = len(data.smVel.keys())
+        for ist,st in enumerate(data.smVel.keys()):
+            if not st in data.bbVel:
+                continue
+            
+            stSM = data.smVel[st]
+            stBB = data.bbVel[st]
 
             info = "%s.%s" % (stSM.traces[0].stats.network, stSM.traces[0].stats.station)
             self.figure.figure.suptitle(info, fontweight='bold')
 
             for component in ["E", "N", "Z"]:
 
-                trSM = stSM.select(component=component)
-                trBB = stBB.select(component=component)
+                trSM = stSM.select(component=component)[0]
+                trBB = stBB.select(component=component)[0]
 
                 # Original strong-motion versus broadband
                 dataSM = trSM.dataOrig
                 dataBB = trBB.data
+                print trSM.times().shape, trSM.dataOrig.shape, trSM.data.shape, trBB.data.shape
                 self._updatePlot("Original", component, trSM.times(), dataSM, dataBB)
-                self._updateResidual("Original", component, trSM.times(), dataDM-dataBB)
+                self._updateResidual("Original", component, trSM.times(), dataSM-dataBB)
 
                 # Denoised strong-motion versus broadband
                 dataSM = trSM.data
                 dataBB = trBB.data
                 self._updatePlot("Denoised", component, trSM.times(), dataSM, dataBB)
-                self._updateResidual("Denoised", component, starttime, samplerate, dataDM, dataBB)
+                self._updateResidual("Denoised", component, trSM.times(), dataSM-dataBB)
                 
 
             plotsDir = os.path.join(_data_filename(self.params, "plots"))
@@ -193,7 +202,7 @@ class ComparisonFigure(object):
                 line2, = ax.plot([], [], 'b-', lw=0.5)
                 ax.autoscale(enable=True, axis="both", tight=True)
                 if irow == 0:
-                    ax.set_title(col))
+                    ax.set_title(col)
                 if irow == nrows-1:
                     ax.set_xlabel("Time (s)")
                 if icol == 0:
@@ -202,13 +211,14 @@ class ComparisonFigure(object):
                     ax.text(pos.xmin, pos.ymax+0.02, row, fontweight='bold', transform=self.figure.figure.transFigure, ha="right")
                 self.axes["%s_%s" % (row,col)] = (ax,line,line2)
 
+        print self.axes.keys()
         return
 
-    def _updatePlot(self, row, component, tSM, dSM, tBB, dBB):
-        ax, lineSM, lineBB = self.axes[row+"-"+component]
-        lineSM.set_xdata(tSM)
+    def _updatePlot(self, row, component, t, dSM, dBB):
+        ax, lineSM, lineBB = self.axes[row+"_"+component]
+        lineSM.set_xdata(t)
         lineSM.set_ydata(dSM)
-        lineBB.set_xdata(tBB)
+        lineBB.set_xdata(t)
         lineBB.set_ydata(dBB)
         ax.relim()
         ax.autoscale_view()
@@ -217,7 +227,7 @@ class ComparisonFigure(object):
         return
     
     def _updateResidual(self, row, component, t, residual):
-        ax, line = self.axes[row+"-residual-"+component]
+        ax, line, line2 = self.axes[row+" Residual_"+component]
         line.set_xdata(t)
         line.set_ydata(residual)
         ax.relim()
