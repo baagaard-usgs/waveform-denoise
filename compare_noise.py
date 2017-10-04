@@ -24,6 +24,7 @@ margins = ((0.6, 0.5, 0.2), (0.5, 0.6, 0.7))
 
 
 [files]
+waveforms_acc = waveforms_acc.p
 waveforms_vel = waveforms_vel.p
 plots = plots-compare
 """
@@ -78,32 +79,24 @@ class WaveformData(object):
         self.params = params
         self.showProgress = show_progress
 
-        self.vel = None
+        self.accSM = None
+        self.velBB = None
         return
 
     def load_processed_waveforms(self):
         """Load processed data.
         """
         import cPickle
-        import obspyutils.subset
         
         if self.showProgress:
             print("Loading processed waveforms...")            
 
-        if self.vel is None:
+        if self.accSM is None:
+            with open(_data_filename(self.params, "waveforms_acc"), "r") as fin:
+                self.accSM = cPickle.Unpickler(fin).load()
+        if self.velBB is None:
             with open(_data_filename(self.params, "waveforms_vel"), "r") as fin:
-                self.vel = cPickle.Unpickler(fin).load()
-
-        self.smVel = obspyutils.subset.streamByStation(self.vel.select(channel="HN?"))
-        self.bbVel = obspyutils.subset.streamByStation(self.vel.select(channel="HH?"))
-        for st in self.smVel.keys():
-            if not st in self.bbVel:
-                continue
-            for tr in self.smVel[st]:
-                samplingRate = tr.stats.sampling_rate
-                startTime = tr.stats.starttime
-                trBB = self.bbVel[st].select(component=tr.stats.channel[-1])
-                trBB.interpolate(sampling_rate=samplingRate, method="weighted_average_slopes", starttime=startTime)
+                self.velBB = cPickle.Unpickler(fin).load()
 
         return
     
@@ -130,6 +123,8 @@ class ComparisonFigure(object):
         """
         import sys
         from ast import literal_eval
+        import obspyutils.subset
+        import obspyutils.baseline
         
         if self.showProgress:
             sys.stdout.write("Plotting comparison figures...")
@@ -145,33 +140,50 @@ class ComparisonFigure(object):
         self._setupSubplots()
         self.figure.figure.canvas.draw()
 
-        numStations = len(data.smVel.keys())
-        for ist,st in enumerate(data.smVel.keys()):
-            if not st in data.bbVel:
+        accSM = obspyutils.subset.streamByStation(data.accSM["orig"])
+        velBB = obspyutils.subset.streamByStation(data.velBB["orig"])
+        for st in accSM.keys():
+            if not st in velBB:
+                continue
+            for tr in accSM[st]:
+                samplingRate = tr.stats.sampling_rate
+                startTime = tr.stats.starttime
+                trBB = velBB[st].select(component=tr.stats.channel[-1])
+                trBB.interpolate(sampling_rate=samplingRate, method="weighted_average_slopes", starttime=startTime)
+                trBB.trim(starttime=tr.stats.starttime, endtime=tr.stats.endtime)
+
+        accSM = obspyutils.subset.streamByStation(data.accSM["data"])
+        accSMOrig = obspyutils.subset.streamByStation(data.accSM["orig"])
+        velBB = obspyutils.subset.streamByStation(data.velBB["data"])
+        velBBOrig = obspyutils.subset.streamByStation(data.velBB["orig"])
+
+        numStations = len(accSM.keys())
+        for ist,st in enumerate(accSM.keys()):
+            if not st in velBB:
                 continue
             
-            stSM = data.smVel[st]
-            stBB = data.bbVel[st]
-
-            info = "%s.%s" % (stSM.traces[0].stats.network, stSM.traces[0].stats.station)
+            info = "%s.%s" % (accSM[st].traces[0].stats.network, accSM[st].traces[0].stats.station)
             self.figure.figure.suptitle(info, fontweight='bold')
 
             for component in ["E", "N", "Z"]:
-
-                trSM = stSM.select(component=component)[0]
-                trBB = stBB.select(component=component)[0]
+                trBB = velBBOrig[st].select(component=component)[0]
 
                 # Original strong-motion versus broadband
-                dataSM = trSM.dataOrig
-                dataBB = trBB.data
-                self._updatePlot("Original", component, trSM.times(), dataSM, dataBB)
-                self._updateResidual("Original", component, trSM.times(), dataSM-dataBB)
+                trSM = accSMOrig[st].select(component=component)[0]
+                t = trSM.times()#reftime=originTime)
+                velSM, dispSM = obspyutils.baseline.integrate_acc(trSM)
+
+                self._updatePlot("Original", component, t, velSM.data, trBB.data)
+                self._updateResidual("Original", component, t, velSM.data-trBB.data)
 
                 # Denoised strong-motion versus broadband
-                dataSM = trSM.data
-                dataBB = trBB.data
-                self._updatePlot("Denoised", component, trSM.times(), dataSM, dataBB)
-                self._updateResidual("Denoised", component, trSM.times(), dataSM-dataBB)
+                trSM = accSM[st].select(component=component)[0]
+                t = trSM.times()#reftime=originTime)
+                velSM, dispSM = obspyutils.baseline.integrate_acc(trSM)
+                trBB.trim(starttime=velSM.stats.starttime, endtime=velSM.stats.endtime, pad=True, fill_value=0.0)
+                
+                self._updatePlot("Denoised", component, t, velSM.data, trBB.data)
+                self._updateResidual("Denoised", component, t, velSM.data-trBB.data)
                 
 
             plotsDir = os.path.join(_data_filename(self.params, "plots"))
