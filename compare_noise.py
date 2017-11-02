@@ -107,7 +107,7 @@ class ComparisonFigure(object):
     Columns are E, N, and Z components
     """
 
-    ROWS = ["Original", "Original Residual", "Denoised", "Denoised Residual"]
+    ROWS = ["Bandpassed", "Bandpassed Residual", "Denoised", "Denoised Residual"]
     COLS = ["E", "N", "Z"]
     
     def __init__(self, params, showProgress):
@@ -140,7 +140,7 @@ class ComparisonFigure(object):
         self._setupSubplots()
         self.figure.figure.canvas.draw()
 
-        accSM = obspyutils.subset.streamByStation(data.accSM["orig"])
+        accSM = obspyutils.subset.streamByStation(data.accSM["bandpass"])
         velBB = obspyutils.subset.streamByStation(data.velBB["orig"])
         for st in accSM.keys():
             if not st in velBB:
@@ -153,7 +153,7 @@ class ComparisonFigure(object):
                 trBB.trim(starttime=tr.stats.starttime, endtime=tr.stats.endtime)
 
         accSM = obspyutils.subset.streamByStation(data.accSM["data"])
-        accSMOrig = obspyutils.subset.streamByStation(data.accSM["orig"])
+        accSMOrig = obspyutils.subset.streamByStation(data.accSM["bandpass"])
         velBB = obspyutils.subset.streamByStation(data.velBB["data"])
         velBBOrig = obspyutils.subset.streamByStation(data.velBB["orig"])
 
@@ -173,8 +173,8 @@ class ComparisonFigure(object):
                 t = trSM.times()#reftime=originTime)
                 velSM, dispSM = obspyutils.baseline.integrate_acc(trSM)
 
-                self._updatePlot("Original", component, t, velSM.data, trBB.data)
-                self._updateResidual("Original", component, t, velSM.data-trBB.data)
+                self._updatePlot("Bandpassed", component, t, velSM.data, trBB.data)
+                self._updateResidual("Bandpassed", component, t, velSM.data-trBB.data)
 
                 # Denoised strong-motion versus broadband
                 trSM = accSM[st].select(component=component)[0]
@@ -219,7 +219,7 @@ class ComparisonFigure(object):
                 if icol == 0:
                     ax.set_ylabel("Velocity (m/s)")
                     pos = ax.get_position()
-                    ax.text(pos.xmin, pos.ymax+0.02, row, fontweight='bold', transform=self.figure.figure.transFigure, ha="right")
+                    ax.text(pos.xmin, pos.ymax+0.02, row, fontweight='bold', transform=self.figure.figure.transFigure, ha="left")
                 self.axes["%s_%s" % (row,col)] = (ax,line,line2)
 
         return
